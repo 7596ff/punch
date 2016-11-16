@@ -7,6 +7,7 @@ use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::io::Read;
+use std::io;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::ops::Sub;
@@ -23,7 +24,7 @@ use chrono::UTC;
 const RECORD_LENGTH: usize = 22;
 
 fn main() {
-    ensure_log_file_exists();
+    ensure_log_file_exists().is_ok();
 
     let args = App::new("punchcard")
         .about("Time tracker")
@@ -74,7 +75,9 @@ fn print_last_record() {
     populate_record_at_current_offset(&mut config_file, &mut record);
     
     if record.action == Action::PunchIn {
-    	println!("Punched in since {}", record.timestamp)
+    	let current_timestamp = chrono::UTC::now();
+    	let time_punched_in = current_timestamp.sub(record.timestamp);
+    	println!("Punched in since {} ({})", record.timestamp, time_punched_in)
     } 
     else {
     	let mut previous_record = Record {
@@ -155,7 +158,7 @@ fn do_file_write(data: &[u8], f: &mut File) {
     }
 }
 
-fn ensure_log_file_exists() {
+fn ensure_log_file_exists() -> io::Result<()> {
     let mut conf_dir = PathBuf::new();
     conf_dir.push(env::home_dir().unwrap());
     conf_dir.push(".punch");
@@ -166,30 +169,12 @@ fn ensure_log_file_exists() {
 
     let mut dir_builder = DirBuilder::new();
     dir_builder.recursive(true);
-    match dir_builder.create(config_path) {
-        Ok(_) => println!("Directory created ok"),
-        Err(e) => println!("Failed to create dir {}", e),
-    }
+    
+    try!(dir_builder.create(config_path));
 
     let conf_file = conf_file_builder.as_path();
-    let config_file = OpenOptions::new().create(true).write(true).open(conf_file);
-
-    // let mut file =
-    match config_file {
-        Ok(f) => {
-            f
-        }
-        Err(e) => panic!("Error {}", e),
-    };
-    //    let current_length = match file.metadata() {
-    //    	Ok(m) => m.len(),
-    //    	Err(e) => panic!("Unable to get file metadata due to {}", e)
-    //    };
-
-    //    if current_length == 0 {
-    // 	    match file.write_all(b"Foobar") {
-    // 			Ok(_) => println!("Wrote something"),
-    // 			Err(e) => println!("Failed to write: {}", e)
-    // 		}
-    //    }
+    match OpenOptions::new().create(true).write(true).open(conf_file) {
+    	Ok(_) => Ok(()),
+    	Err(e) => Err(e)
+    }	
 }
