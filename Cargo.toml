@@ -1,0 +1,8 @@
+[package]
+name = "punch"
+version = "0.1.0"
+authors = ["Mark Price <pricem@lmax.com>"]
+
+[dependencies]
+clap = "2.15.0"
+chrono = "0.2"
