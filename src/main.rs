@@ -12,6 +12,7 @@ use std::io::Seek;
 use std::io::SeekFrom;
 use std::ops::Sub;
 use std::path::PathBuf;
+use std::process;
 use std::str;
 
 use clap::{App, AppSettings, SubCommand};
@@ -24,7 +25,13 @@ use chrono::UTC;
 const RECORD_LENGTH: usize = 22;
 
 fn main() {
-    ensure_log_file_exists().is_ok();
+    match ensure_log_file_exists() {
+    	Ok(_) => {},
+    	Err(e) => {
+    		println!("Couldn't create punch log: {}.\nExiting.", e);
+    		process::exit(1)
+    	}
+    }
 
     let args = App::new("punchcard")
         .about("Time tracker")
@@ -92,6 +99,13 @@ fn print_last_record() {
     		previous_record.timestamp, record.timestamp, delta)
     }
 }
+
+fn populate_record_at_offset_from_end(config_file: &mut File, record: &mut Record, offset_from_end: u64) -> Result<(), String> {
+	seek_to_record_offset(config_file, 1);
+	populate_record_at_current_offset(config_file, record);
+	Ok(())
+}
+
 
 fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
 	let action_token = match action {
