@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["Mark Price <mark@epickrram.com>"]
 homepage = "https://github.com/epickrram/punch"
 repository = "https://github.com/epickrram/punch"
+keywords = ["tracker", "punchcard"]
+
 
 [dependencies]
 clap = "2.15.0"
