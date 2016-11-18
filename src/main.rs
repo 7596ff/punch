@@ -29,7 +29,7 @@ fn main() {
     	Ok(_) => {},
     	Err(e) => {
     		println!("Couldn't create punch log: {}.\nExiting.", e);
-    		process::exit(1)
+			process::exit(1)
     	}
     }
 
@@ -42,10 +42,12 @@ fn main() {
         .get_matches();
 
 	if args.is_present("in") {
+		ensure_last_record_is_of_action(Action::PunchOut);
 		write_record_to_log(chrono::UTC::now(), Action::PunchIn);
 	}
 	
 	if args.is_present("out") {
+		ensure_last_record_is_of_action(Action::PunchIn);
 		write_record_to_log(chrono::UTC::now(), Action::PunchOut);
 	}
 	
@@ -58,7 +60,8 @@ fn main() {
 #[derive(PartialEq)]
 enum Action {
 	PunchIn,
-	PunchOut
+	PunchOut,
+	Unset
 }
 
 struct Record {
@@ -66,20 +69,66 @@ struct Record {
 	action: Action
 }
 
-fn print_last_record() {
+fn ensure_last_record_is_of_action(expected_action: Action) {
+
+	let mut config_file = get_conf_file(true, false).unwrap();
+    let mut record = empty_record();
+
+    match populate_record_at_offset_from_end(&mut config_file, &mut record, 0) {
+    	Ok(_) => {},
+    	Err(e) => {
+    		println!("Couldn't create punch log: {}.\nExiting.", e);
+			process::exit(1)
+    	}
+    }
+    
+    if record.action != expected_action {
+    	match expected_action {
+    		Action::PunchIn => {
+    			println!("Already punched out, punch in first!");
+				process::exit(1)    			
+    		}
+    		Action::PunchOut => {
+    			println!("Already punched in, punch out first!");
+    			process::exit(1)
+    		}
+    		Action::Unset => {
+    			println!("Found unset action, log file corrupt");
+    			process::exit(1)
+    		}
+    	}
+    	
+    }
+}
+
+fn get_conf_file(read: bool, append: bool) -> io::Result<File> {
 	
 	let mut conf_file = PathBuf::new();
     conf_file.push(env::home_dir().unwrap());
     conf_file.push(".punch");
     conf_file.push("punch.log");
     
-    let mut config_file = OpenOptions::new().read(true).open(conf_file).unwrap();
-    let mut record = Record {
-    	action: Action::PunchIn,
+    OpenOptions::new().read(read).append(append).open(conf_file)
+}
+
+fn empty_record() -> Record {
+	Record {
+    	action: Action::Unset,
     	timestamp: chrono::UTC::now()
-    };
-    seek_to_record_offset(&mut config_file, 0);
-    populate_record_at_current_offset(&mut config_file, &mut record);
+    }
+}
+
+fn print_last_record() {
+    let mut config_file = get_conf_file(true, false).unwrap();
+    let mut record = empty_record();
+
+    match populate_record_at_offset_from_end(&mut config_file, &mut record, 0) {
+    	Ok(_) => {},
+    	Err(e) => {
+    		println!("Couldn't create punch log: {}.\nExiting.", e);
+			process::exit(1)
+    	}
+    }
     
     if record.action == Action::PunchIn {
     	let current_timestamp = chrono::UTC::now();
@@ -87,12 +136,14 @@ fn print_last_record() {
     	println!("Punched in since {} ({})", record.timestamp, time_punched_in)
     } 
     else {
-    	let mut previous_record = Record {
-    		action: Action::PunchIn,
-    		timestamp: chrono::UTC::now()
-    	};
-    	seek_to_record_offset(&mut config_file, 1);
-    	populate_record_at_current_offset(&mut config_file, &mut previous_record);
+    	let mut previous_record = empty_record();
+    	match populate_record_at_offset_from_end(&mut config_file, &mut previous_record, 1) {
+	    	Ok(_) => {},
+	    	Err(e) => {
+	    		println!("Couldn't create punch log: {}.\nExiting.", e);
+				process::exit(1)
+	    	}
+	    }
     	
     	let delta = record.timestamp.sub(previous_record.timestamp);
     	println!("Previously punched in between {} and {} ({})", 
@@ -101,7 +152,7 @@ fn print_last_record() {
 }
 
 fn populate_record_at_offset_from_end(config_file: &mut File, record: &mut Record, offset_from_end: u64) -> Result<(), String> {
-	seek_to_record_offset(config_file, 1);
+	seek_to_record_offset(config_file, offset_from_end);
 	populate_record_at_current_offset(config_file, record);
 	Ok(())
 }
@@ -110,15 +161,11 @@ fn populate_record_at_offset_from_end(config_file: &mut File, record: &mut Recor
 fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
 	let action_token = match action {
 		Action::PunchIn => "I",
-		Action::PunchOut => "O"
+		Action::PunchOut => "O",
+		Action::Unset => "U"
 	};
 	
-	let mut conf_file = PathBuf::new();
-    conf_file.push(env::home_dir().unwrap());
-    conf_file.push(".punch");
-    conf_file.push("punch.log");
-    
-    let mut config_file = OpenOptions::new().append(true).open(conf_file).unwrap();
+    let mut config_file = get_conf_file(false, true).unwrap();
     let fmt = tm.format("%FT%T");
 	let formatted_timestamp = fmt.to_string();
 	do_file_write(formatted_timestamp.as_bytes(), &mut config_file);
