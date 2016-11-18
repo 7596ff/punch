@@ -21,8 +21,20 @@ use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::UTC;
 
-
 const RECORD_LENGTH: usize = 22;
+
+#[derive(Debug)]
+#[derive(PartialEq)]
+enum Action {
+	PunchIn,
+	PunchOut,
+	Unset
+}
+
+struct Record {
+	timestamp: DateTime<UTC>,
+	action: Action
+}
 
 fn main() {
     match ensure_log_file_exists() {
@@ -44,30 +56,16 @@ fn main() {
 	if args.is_present("in") {
 		ensure_last_record_is_of_action(Action::PunchOut);
 		write_record_to_log(chrono::UTC::now(), Action::PunchIn);
-	}
-	
-	if args.is_present("out") {
+	} 
+	else if args.is_present("out") {
 		ensure_last_record_is_of_action(Action::PunchIn);
 		write_record_to_log(chrono::UTC::now(), Action::PunchOut);
-	}
-	
-	if args.is_present("card") {
+	} 
+	else if args.is_present("card") {
 		print_last_record();
 	}
 }
 
-#[derive(Debug)]
-#[derive(PartialEq)]
-enum Action {
-	PunchIn,
-	PunchOut,
-	Unset
-}
-
-struct Record {
-	timestamp: DateTime<UTC>,
-	action: Action
-}
 
 fn ensure_last_record_is_of_action(expected_action: Action) {
 
