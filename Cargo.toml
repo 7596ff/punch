@@ -1,6 +1,6 @@
 [package]
 name = "punch"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Mark Price <mark@epickrram.com>"]
 homepage = "https://github.com/epickrram/punch"
 repository = "https://github.com/epickrram/punch"

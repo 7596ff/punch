@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::process;
 use std::str;
 
-use clap::{App, AppSettings, SubCommand};
+use clap::{Arg, App, AppSettings, SubCommand};
 
 use chrono::DateTime;
 use chrono::TimeZone;
@@ -45,30 +45,95 @@ fn main() {
     	}
     }
 
-    let args = App::new("punchcard")
-        .about("Time tracker")
-        .setting(AppSettings::ArgRequiredElseHelp)
-        .subcommand(SubCommand::with_name("in"))
-        .subcommand(SubCommand::with_name("out"))
-        .subcommand(SubCommand::with_name("card"))
-        .get_matches();
+    let args = App::new("Punch").
+	    about("A simple time tracker app").
+	    version("0.1").
+        setting(AppSettings::ArgRequiredElseHelp).
+        subcommand(SubCommand::with_name("in").about("Punch in")).
+        subcommand(SubCommand::with_name("out").about("Punch out")).
+        subcommand(SubCommand::with_name("card").about("Display state").
+	        arg(Arg::with_name("week").long("week").short("w").help("Display summary for the last week")).
+	        arg(Arg::with_name("mtd").long("mtd").short("m").help("Display summary for the month to date"))).
+        get_matches();
 
-	if args.is_present("in") {
-		ensure_last_record_is_of_action(Action::PunchOut);
-		write_record_to_log(chrono::UTC::now(), Action::PunchIn);
-	} 
-	else if args.is_present("out") {
-		ensure_last_record_is_of_action(Action::PunchIn);
-		write_record_to_log(chrono::UTC::now(), Action::PunchOut);
-	} 
-	else if args.is_present("card") {
-		print_last_record();
+
+	match args.subcommand() {
+		("card", Some(specifier)) => {
+			if specifier.is_present("week") {
+				println!("Print weekly summary")
+			}
+			else if specifier.is_present("mtd") {
+				println!("Print month-to-date summary")
+			}
+			else {
+				print_current_state();
+			}
+		},
+		("in", _) => {
+			ensure_last_record_is_of_action(Action::PunchOut);
+			write_record_to_log(chrono::UTC::now(), Action::PunchIn);								
+		},
+		("out", _) => {
+			ensure_last_record_is_of_action(Action::PunchIn);
+			write_record_to_log(chrono::UTC::now(), Action::PunchOut);
+		},
+		_ => {
+			println!("Unknown command")				
+		}
 	}
 }
 
+fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
+	let action_token = match action {
+		Action::PunchIn => "I",
+		Action::PunchOut => "O",
+		Action::Unset => "U"
+	};
+	
+    let mut config_file = get_conf_file(false, true).unwrap();
+    let fmt = tm.format("%FT%T");
+	let formatted_timestamp = fmt.to_string();
+	append_to_file(format!("{}_{}\n", formatted_timestamp, action_token).as_bytes(), &mut config_file);
+}
+
+fn print_current_state() {
+    let mut config_file = get_conf_file(true, false).unwrap();
+    let mut record = empty_record();
+
+    match populate_record_at_offset_from_end(&mut config_file, &mut record, 0) {
+    	Ok(_) => {},
+    	Err(e) => {
+    		println!("Couldn't read entry: {}.\nExiting.", e);
+			process::exit(1)
+    	}
+    }
+    
+    if record.action == Action::PunchIn {
+    	let current_timestamp = chrono::UTC::now();
+    	let time_punched_in = current_timestamp.sub(record.timestamp);
+    	println!("Punched in since {} ({})", record.timestamp, format_duration(time_punched_in))
+    } 
+    else {
+    	let mut previous_record = empty_record();
+    	match populate_record_at_offset_from_end(&mut config_file, &mut previous_record, 1) {
+	    	Ok(_) => {},
+	    	Err(e) => {
+	    		println!("Couldn't read entry: {}.\nExiting.", e);
+				process::exit(1)
+	    	}
+	    }
+    	
+    	let delta = record.timestamp.sub(previous_record.timestamp);
+    	println!("Previously punched in between {} and {} ({})", 
+    		previous_record.timestamp, record.timestamp, format_duration(delta))
+    }
+}
+
+fn format_duration(duration: chrono::Duration) -> String {
+	format!("{:02}h{:02}m", duration.num_hours(), duration.num_minutes())
+}
 
 fn ensure_last_record_is_of_action(expected_action: Action) {
-
 	let mut config_file = get_conf_file(true, false).unwrap();
     let mut record = empty_record();
 
@@ -84,23 +149,21 @@ fn ensure_last_record_is_of_action(expected_action: Action) {
     	match expected_action {
     		Action::PunchIn => {
     			println!("Already punched out, punch in first!");
-				process::exit(1)    			
+				process::exit(0)    			
     		}
     		Action::PunchOut => {
     			println!("Already punched in, punch out first!");
-    			process::exit(1)
+    			process::exit(0)
     		}
     		Action::Unset => {
     			println!("Found unset action, log file corrupt");
     			process::exit(1)
     		}
     	}
-    	
     }
 }
 
 fn get_conf_file(read: bool, append: bool) -> io::Result<File> {
-	
 	let mut conf_file = PathBuf::new();
     conf_file.push(env::home_dir().unwrap());
     conf_file.push(".punch");
@@ -116,74 +179,22 @@ fn empty_record() -> Record {
     }
 }
 
-fn print_last_record() {
-    let mut config_file = get_conf_file(true, false).unwrap();
-    let mut record = empty_record();
-
-    match populate_record_at_offset_from_end(&mut config_file, &mut record, 0) {
-    	Ok(_) => {},
-    	Err(e) => {
-    		println!("Couldn't create punch log: {}.\nExiting.", e);
-			process::exit(1)
-    	}
-    }
-    
-    if record.action == Action::PunchIn {
-    	let current_timestamp = chrono::UTC::now();
-    	let time_punched_in = current_timestamp.sub(record.timestamp);
-    	println!("Punched in since {} ({})", record.timestamp, time_punched_in)
-    } 
-    else {
-    	let mut previous_record = empty_record();
-    	match populate_record_at_offset_from_end(&mut config_file, &mut previous_record, 1) {
-	    	Ok(_) => {},
-	    	Err(e) => {
-	    		println!("Couldn't create punch log: {}.\nExiting.", e);
-				process::exit(1)
-	    	}
-	    }
-    	
-    	let delta = record.timestamp.sub(previous_record.timestamp);
-    	println!("Previously punched in between {} and {} ({})", 
-    		previous_record.timestamp, record.timestamp, delta)
-    }
-}
-
 fn populate_record_at_offset_from_end(config_file: &mut File, record: &mut Record, offset_from_end: u64) -> Result<(), String> {
-	seek_to_record_offset(config_file, offset_from_end);
-	populate_record_at_current_offset(config_file, record);
-	Ok(())
+	return seek_to_record_offset(config_file, offset_from_end).
+		and_then(|_| populate_record_at_current_offset(config_file, record))
 }
 
-
-fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
-	let action_token = match action {
-		Action::PunchIn => "I",
-		Action::PunchOut => "O",
-		Action::Unset => "U"
-	};
-	
-    let mut config_file = get_conf_file(false, true).unwrap();
-    let fmt = tm.format("%FT%T");
-	let formatted_timestamp = fmt.to_string();
-	do_file_write(formatted_timestamp.as_bytes(), &mut config_file);
-	do_file_write("_".as_bytes(), &mut config_file);
-	do_file_write(action_token.as_bytes(), &mut config_file);
-	do_file_write("\n".as_bytes(), &mut config_file);
-}
-
-fn populate_record_at_current_offset(f: &mut File, record: &mut Record) -> bool {
+fn populate_record_at_current_offset(f: &mut File, record: &mut Record) -> Result<(), String> {
 	let mut data = [0 as u8; RECORD_LENGTH];
 	let read = f.read(&mut data);
 	if read.unwrap() != RECORD_LENGTH {
-		panic!("Could not read complete record")
+		panic!("Could not read complete record of {} bytes", RECORD_LENGTH)
 	}
 	let (ts_data, rest) = data.split_at(19);
 	let timestamp = str::from_utf8(&ts_data).unwrap();
 	let parse_result = chrono::UTC.datetime_from_str(&timestamp, "%FT%T");
 	
-	let record_ts = parse_result.
-		unwrap().with_timezone(&chrono::UTC);
+	let record_ts = parse_result.unwrap().with_timezone(&chrono::UTC);
 	record.timestamp = record_ts;
 	let action_string = str::from_utf8(&rest).unwrap();
 	if action_string == "_O\n" {
@@ -193,12 +204,12 @@ fn populate_record_at_current_offset(f: &mut File, record: &mut Record) -> bool 
 		record.action = Action::PunchIn;
 	} 
 	else {
-		panic!("Could not determine action type from '{}'", action_string)
+		return Err(format!("Could not determine action type from '{}'", action_string))
 	}
-	return true
+	Ok(())
 }
 
-fn seek_to_record_offset(f: &mut File, record_offset: u64) {
+fn seek_to_record_offset(f: &mut File, record_offset: u64) -> Result<(), String> {
 	let m = f.metadata().unwrap();
 	let file_len = m.len();
 	
@@ -206,11 +217,12 @@ fn seek_to_record_offset(f: &mut File, record_offset: u64) {
 	let seek_offset = file_len - ((record_offset + 1) * record_length_in_bytes);
 	
 	if f.seek(SeekFrom::Start(seek_offset)).unwrap() != seek_offset {
-		panic!("Could not seek to record offset {}", record_offset)
+		return Err(format!("Could not seek to record offset {}", seek_offset))
 	}
+	Ok(())
 }
 
-fn do_file_write(data: &[u8], f: &mut File) {
+fn append_to_file(data: &[u8], f: &mut File) {
 	match f.write_all(data) {
     	Ok(_) => {},
     	Err(e) => println!("Failed to write data to log: {}", e)
