@@ -18,8 +18,10 @@ use std::str;
 use clap::{Arg, App, AppSettings, SubCommand};
 
 use chrono::DateTime;
+use chrono::Timelike;
 use chrono::TimeZone;
 use chrono::UTC;
+use chrono::date::Date;
 
 const RECORD_LENGTH: usize = 22;
 
@@ -60,7 +62,7 @@ fn main() {
 	match args.subcommand() {
 		("card", Some(specifier)) => {
 			if specifier.is_present("week") {
-				println!("Print weekly summary")
+				print_weekly_summary()
 			}
 			else if specifier.is_present("mtd") {
 				println!("Print month-to-date summary")
@@ -94,6 +96,35 @@ fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
     let fmt = tm.format("%FT%T");
 	let formatted_timestamp = fmt.to_string();
 	append_to_file(format!("{}_{}\n", formatted_timestamp, action_token).as_bytes(), &mut config_file);
+}
+
+fn print_weekly_summary() {
+	let start_of_week = chrono::UTC::now().with_second(0).
+		map(|ts| ts.with_minute(0).
+			map(|ts| ts.with_hour(0))
+		).unwrap().unwrap().unwrap();
+		
+		print_daily_durations_since(start_of_week);
+}
+
+fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
+	let mut daily_durations: Vec<DailyDuration> = vec![];
+	let mut record_offset = 0;
+	let mut record = empty_record();
+	let mut config_file = get_conf_file(true, false).unwrap();
+	
+	while (true) {
+		populate_record_at_offset_from_end(&mut config_file, &mut record, record_offset);
+		
+		
+		
+		record_offset -= 1;
+	}
+}
+
+struct DailyDuration {
+	date: chrono::date::Date<UTC>,
+	duration: chrono::Duration
 }
 
 fn print_current_state() {
