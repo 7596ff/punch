@@ -11,6 +11,7 @@ use std::io;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::ops::Sub;
+use std::ops::Add;
 use std::path::PathBuf;
 use std::process;
 use std::str;
@@ -112,10 +113,21 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
 	let mut record_offset = 0;
 	let mut record = empty_record();
 	let mut config_file = get_conf_file(true, false).unwrap();
-	
-	while (true) {
-		populate_record_at_offset_from_end(&mut config_file, &mut record, record_offset);
+	let &mut current_date: &mut chrono::Date<UTC> = 
+		&mut chrono::UTC::now().date().add(chrono::Duration::days(1));
 		
+	let mut day_count: i64 = 0;
+	
+	loop {
+		populate_record_at_offset_from_end(&mut config_file, &mut record, record_offset);
+		if record.timestamp.date() != current_date && day_count != 0 {
+			
+			daily_durations.push(DailyDuration {
+					date: current_date,
+					duration: chrono::Duration::days(1)
+			});
+			day_count += 1;
+		}
 		
 		
 		record_offset -= 1;
@@ -243,6 +255,10 @@ fn populate_record_at_current_offset(f: &mut File, record: &mut Record) -> Resul
 fn seek_to_record_offset(f: &mut File, record_offset: u64) -> Result<(), String> {
 	let m = f.metadata().unwrap();
 	let file_len = m.len();
+	
+	if file_len < RECORD_LENGTH as u64 {
+		return Err(String::from("No data in log - punch in first!"))
+	}
 	
 	let record_length_in_bytes = RECORD_LENGTH as u64;
 	let seek_offset = file_len - ((record_offset + 1) * record_length_in_bytes);
