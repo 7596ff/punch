@@ -18,11 +18,11 @@ use std::str;
 
 use clap::{Arg, App, AppSettings, SubCommand};
 
+use chrono::Datelike;
 use chrono::DateTime;
 use chrono::Timelike;
 use chrono::TimeZone;
 use chrono::UTC;
-use chrono::date::Date;
 
 const RECORD_LENGTH: usize = 22;
 
@@ -34,6 +34,7 @@ enum Action {
 	Unset
 }
 
+#[derive(Debug)]
 struct Record {
 	timestamp: DateTime<UTC>,
 	action: Action
@@ -100,11 +101,19 @@ fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
 }
 
 fn print_weekly_summary() {
-	let start_of_week = chrono::UTC::now().with_second(0).
+	let mut start_of_week = chrono::UTC::now().with_second(0).
 		map(|ts| ts.with_minute(0).
 			map(|ts| ts.with_hour(0))
 		).unwrap().unwrap().unwrap();
 		
+	loop {
+		if start_of_week.weekday() == chrono::Weekday::Mon {
+			break
+		}
+		start_of_week = start_of_week.sub(chrono::Duration::days(1));
+	}
+	
+	println!("start of week: {}", start_of_week);
 		print_daily_durations_since(start_of_week);
 }
 
@@ -113,35 +122,60 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
 	let mut record_offset = 0;
 	let mut record = empty_record();
 	let mut config_file = get_conf_file(true, false).unwrap();
-	let &mut current_date: &mut chrono::Date<UTC> = 
-		&mut chrono::UTC::now().date().add(chrono::Duration::days(1));
+	let mut current_date: chrono::Date<UTC> = 
+		chrono::UTC::now().date().add(chrono::Duration::days(1));
 		
 	let mut day_count: i64 = 0;
 	let mut total_seconds_in_current_day: i64 = 0;
+	let mut total_seconds_in_time_range: i64 = 0;
 	
 	// TODO need to account for duration between now and last punch-in 
 	if get_last_record_action() == Action::PunchIn {
 		record_offset = 1
 	}
+	let mut last_punch_out_timestamp: chrono::DateTime<UTC> = chrono::UTC::now();
 	
 	loop {
-		populate_record_at_offset_from_end(&mut config_file, &mut record, record_offset);
+		let read_attempt = populate_record_at_offset_from_end(&mut config_file, &mut record, record_offset);
+		if !read_attempt.is_ok() || record.timestamp < start_time {
+			if total_seconds_in_current_day != 0 {
+				daily_durations.push(DailyDuration {
+						date: current_date,
+						duration: chrono::Duration::seconds(total_seconds_in_current_day)
+				});
+			}
+			break
+		}
 		if record.timestamp.date() != current_date && day_count != 0 {
-			
-			
 			daily_durations.push(DailyDuration {
 					date: current_date,
 					duration: chrono::Duration::seconds(total_seconds_in_current_day)
 			});
-			day_count += 1;
+			
 			total_seconds_in_current_day = 0;
 		}
 		
-
-		record_offset -= 1;
+		if record.action == Action::PunchOut {
+			last_punch_out_timestamp = record.timestamp;
+		} else {
+			total_seconds_in_current_day += last_punch_out_timestamp.sub(record.timestamp).num_seconds();
+			total_seconds_in_time_range += last_punch_out_timestamp.sub(record.timestamp).num_seconds();
+		}
+		
+		record_offset += 1;
+		current_date = record.timestamp.date();
+		day_count += 1;
 	}
+	
+	daily_durations.reverse();
+	
+	for daily_duration in &daily_durations {
+		println!("{}: {}", daily_duration.date, format_duration(daily_duration.duration));
+	}
+	println!("\nTotal: {}", format_duration(chrono::Duration::seconds(total_seconds_in_time_range)))
 }
 
+#[derive(Debug)]
 struct DailyDuration {
 	date: chrono::date::Date<UTC>,
 	duration: chrono::Duration
@@ -181,7 +215,7 @@ fn print_current_state() {
 }
 
 fn format_duration(duration: chrono::Duration) -> String {
-	format!("{:02}h{:02}m", duration.num_hours(), duration.num_minutes())
+	format!("{:02}h{:02}m", duration.num_hours(), duration.num_minutes() % 60)
 }
 
 fn get_last_record_action() -> Action {
@@ -276,9 +310,12 @@ fn seek_to_record_offset(f: &mut File, record_offset: u64) -> Result<(), String>
 	}
 	
 	let record_length_in_bytes = RECORD_LENGTH as u64;
-	let seek_offset = file_len - ((record_offset + 1) * record_length_in_bytes);
-	
-	if f.seek(SeekFrom::Start(seek_offset)).unwrap() != seek_offset {
+	let seek_offset = (file_len as i64 - ((record_offset + 1) * record_length_in_bytes) as i64) as u64;
+	let seek_result = f.seek(SeekFrom::Start(seek_offset));
+	if !seek_result.is_ok() {
+		return Err(format!("Failed to seek: {}", seek_result.err().unwrap()))
+	}
+	if seek_result.unwrap() != seek_offset {
 		return Err(format!("Could not seek to record offset {}", seek_offset))
 	}
 	Ok(())
