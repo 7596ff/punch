@@ -117,19 +117,27 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
 		&mut chrono::UTC::now().date().add(chrono::Duration::days(1));
 		
 	let mut day_count: i64 = 0;
+	let mut total_seconds_in_current_day: i64 = 0;
+	
+	// TODO need to account for duration between now and last punch-in 
+	if get_last_record_action() == Action::PunchIn {
+		record_offset = 1
+	}
 	
 	loop {
 		populate_record_at_offset_from_end(&mut config_file, &mut record, record_offset);
 		if record.timestamp.date() != current_date && day_count != 0 {
 			
+			
 			daily_durations.push(DailyDuration {
 					date: current_date,
-					duration: chrono::Duration::days(1)
+					duration: chrono::Duration::seconds(total_seconds_in_current_day)
 			});
 			day_count += 1;
+			total_seconds_in_current_day = 0;
 		}
 		
-		
+
 		record_offset -= 1;
 	}
 }
@@ -176,7 +184,7 @@ fn format_duration(duration: chrono::Duration) -> String {
 	format!("{:02}h{:02}m", duration.num_hours(), duration.num_minutes())
 }
 
-fn ensure_last_record_is_of_action(expected_action: Action) {
+fn get_last_record_action() -> Action {
 	let mut config_file = get_conf_file(true, false).unwrap();
     let mut record = empty_record();
 
@@ -187,8 +195,15 @@ fn ensure_last_record_is_of_action(expected_action: Action) {
 			process::exit(1)
     	}
     }
+	
+	record.action
+}
+
+fn ensure_last_record_is_of_action(expected_action: Action) {
+
+    let last_action = get_last_record_action();
     
-    if record.action != expected_action {
+    if last_action != expected_action {
     	match expected_action {
     		Action::PunchIn => {
     			println!("Already punched out, punch in first!");
