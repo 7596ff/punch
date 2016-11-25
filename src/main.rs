@@ -1,18 +1,14 @@
 extern crate clap;
 extern crate chrono;
 
-use std::env;
-use std::fs::DirBuilder;
+mod journal;
+
 use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::io::Read;
-use std::io;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::ops::Sub;
 use std::ops::Add;
-use std::path::PathBuf;
 use std::process;
 use std::str;
 
@@ -40,15 +36,16 @@ struct Record {
 	action: Action
 }
 
-fn main() {
-    match ensure_log_file_exists() {
-    	Ok(_) => {},
-    	Err(e) => {
-    		println!("Couldn't create punch log: {}.\nExiting.", e);
-			process::exit(1)
-    	}
-    }
+#[derive(Debug)]
+struct DailyDuration {
+	date: chrono::date::Date<UTC>,
+	duration: chrono::Duration
+}
 
+
+fn main() {
+	journal::exit_if_log_file_cannot_be_created();
+	
     let args = App::new("Punch").
 	    about("A simple time tracker app").
 	    version("0.1").
@@ -94,10 +91,10 @@ fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
 		Action::Unset => "U"
 	};
 	
-    let mut config_file = get_conf_file(false, true).unwrap();
+    let mut config_file = journal::get_conf_file(false, true).unwrap();
     let fmt = tm.format("%FT%T");
 	let formatted_timestamp = fmt.to_string();
-	append_to_file(format!("{}_{}\n", formatted_timestamp, action_token).as_bytes(), &mut config_file);
+	journal::append_to_file(format!("{}_{}\n", formatted_timestamp, action_token).as_bytes(), &mut config_file);
 }
 
 fn print_month_to_date_summary() {
@@ -136,7 +133,7 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
 	let mut daily_durations: Vec<DailyDuration> = vec![];
 	let mut record_offset = 0;
 	let mut record = empty_record();
-	let mut config_file = get_conf_file(true, false).unwrap();
+	let mut config_file = journal::get_conf_file(true, false).unwrap();
 	let mut current_date: chrono::Date<UTC> = 
 		chrono::UTC::now().date().add(chrono::Duration::days(1));
 		
@@ -190,14 +187,9 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
 	println!("\nTotal: {}", format_duration(chrono::Duration::seconds(total_seconds_in_time_range)))
 }
 
-#[derive(Debug)]
-struct DailyDuration {
-	date: chrono::date::Date<UTC>,
-	duration: chrono::Duration
-}
 
 fn print_current_state() {
-    let mut config_file = get_conf_file(true, false).unwrap();
+    let mut config_file = journal::get_conf_file(true, false).unwrap();
     let mut record = empty_record();
 
     match populate_record_at_offset_from_end(&mut config_file, &mut record, 0) {
@@ -234,7 +226,7 @@ fn format_duration(duration: chrono::Duration) -> String {
 }
 
 fn get_last_record_action() -> Action {
-	let mut config_file = get_conf_file(true, false).unwrap();
+	let mut config_file = journal::get_conf_file(true, false).unwrap();
     let mut record = empty_record();
     
     if config_file.metadata().unwrap().len() == 0 {
@@ -275,15 +267,6 @@ fn ensure_last_record_is_of_action(expected_action: Action) {
     		}
     	}
     }
-}
-
-fn get_conf_file(read: bool, append: bool) -> io::Result<File> {
-	let mut conf_file = PathBuf::new();
-    conf_file.push(env::home_dir().unwrap());
-    conf_file.push(".punch");
-    conf_file.push("punch.log");
-    
-    OpenOptions::new().read(read).append(append).open(conf_file)
 }
 
 fn empty_record() -> Record {
@@ -343,30 +326,3 @@ fn seek_to_record_offset(f: &mut File, record_offset: u64) -> Result<(), String>
 	Ok(())
 }
 
-fn append_to_file(data: &[u8], f: &mut File) {
-	match f.write_all(data) {
-    	Ok(_) => {},
-    	Err(e) => println!("Failed to write data to log: {}", e)
-    }
-}
-
-fn ensure_log_file_exists() -> io::Result<()> {
-    let mut conf_dir = PathBuf::new();
-    conf_dir.push(env::home_dir().unwrap());
-    conf_dir.push(".punch");
-    let config_path = conf_dir.as_path();
-
-    let mut conf_file_builder = PathBuf::from(config_path);
-    conf_file_builder.push("punch.log");
-
-    let mut dir_builder = DirBuilder::new();
-    dir_builder.recursive(true);
-    
-    try!(dir_builder.create(config_path));
-
-    let conf_file = conf_file_builder.as_path();
-    match OpenOptions::new().create(true).write(true).open(conf_file) {
-    	Ok(_) => Ok(()),
-    	Err(e) => Err(e)
-    }	
-}
