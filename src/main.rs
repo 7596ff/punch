@@ -67,10 +67,10 @@ fn main() {
 				print_weekly_summary()
 			}
 			else if specifier.is_present("mtd") {
-				println!("Print month-to-date summary")
+				print_month_to_date_summary()
 			}
 			else {
-				print_current_state();
+				print_current_state()
 			}
 		},
 		("in", _) => {
@@ -100,6 +100,22 @@ fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
 	append_to_file(format!("{}_{}\n", formatted_timestamp, action_token).as_bytes(), &mut config_file);
 }
 
+fn print_month_to_date_summary() {
+	let mut start_of_month = chrono::UTC::now().with_second(0).
+		map(|ts| ts.with_minute(0).
+			map(|ts| ts.with_hour(0))
+		).unwrap().unwrap().unwrap();
+		
+	loop {
+		if start_of_month.day() == 1 {
+			break
+		}
+		start_of_month = start_of_month.sub(chrono::Duration::days(1));
+	}
+	
+	print_daily_durations_since(start_of_month);
+}
+
 fn print_weekly_summary() {
 	let mut start_of_week = chrono::UTC::now().with_second(0).
 		map(|ts| ts.with_minute(0).
@@ -113,8 +129,7 @@ fn print_weekly_summary() {
 		start_of_week = start_of_week.sub(chrono::Duration::days(1));
 	}
 	
-	println!("start of week: {}", start_of_week);
-		print_daily_durations_since(start_of_week);
+	print_daily_durations_since(start_of_week);
 }
 
 fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
@@ -221,6 +236,10 @@ fn format_duration(duration: chrono::Duration) -> String {
 fn get_last_record_action() -> Action {
 	let mut config_file = get_conf_file(true, false).unwrap();
     let mut record = empty_record();
+    
+    if config_file.metadata().unwrap().len() == 0 {
+    	return Action::Unset
+    }
 
     match populate_record_at_offset_from_end(&mut config_file, &mut record, 0) {
     	Ok(_) => {},
@@ -237,6 +256,10 @@ fn ensure_last_record_is_of_action(expected_action: Action) {
 
     let last_action = get_last_record_action();
     
+    if last_action == Action::Unset {
+    	return
+    }
+    
     if last_action != expected_action {
     	match expected_action {
     		Action::PunchIn => {
@@ -248,8 +271,7 @@ fn ensure_last_record_is_of_action(expected_action: Action) {
     			process::exit(0)
     		}
     		Action::Unset => {
-    			println!("Found unset action, log file corrupt");
-    			process::exit(1)
+    			// log file could be empty, this is ok.
     		}
     	}
     }
