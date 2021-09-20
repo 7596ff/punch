@@ -9,10 +9,10 @@ keywords = ["tracker", "punchcard", "time", "management"]
 license = "Apache-2.0"
 description = "A very simple time-management application"
 
-
 [dependencies]
 clap = "2.15.0"
 chrono = "0.2"
+directories = "4.0"
 
 [[bin]]
 name = "punch"

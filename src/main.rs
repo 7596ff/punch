@@ -1,5 +1,4 @@
-extern crate chrono;
-extern crate clap;
+#![deny(clippy::all, clippy::pedantic, unused, warnings)]
 
 mod journal;
 
@@ -71,28 +70,28 @@ fn main() {
     match args.subcommand() {
         ("card", Some(specifier)) => {
             if specifier.is_present("week") {
-                print_weekly_summary()
+                print_weekly_summary();
             } else if specifier.is_present("mtd") {
-                print_month_to_date_summary()
+                print_month_to_date_summary();
             } else {
-                print_current_state()
+                print_current_state();
             }
         }
         ("in", _) => {
-            ensure_last_record_is_of_action(Action::PunchOut);
-            write_record_to_log(chrono::UTC::now(), Action::PunchIn);
+            ensure_last_record_is_of_action(&Action::PunchOut);
+            write_record_to_log(chrono::UTC::now(), &Action::PunchIn);
         }
         ("out", _) => {
-            ensure_last_record_is_of_action(Action::PunchIn);
-            write_record_to_log(chrono::UTC::now(), Action::PunchOut);
+            ensure_last_record_is_of_action(&Action::PunchIn);
+            write_record_to_log(chrono::UTC::now(), &Action::PunchOut);
         }
         _ => {
-            println!("Unknown command")
+            println!("Unknown command");
         }
     }
 }
 
-fn write_record_to_log(tm: DateTime<UTC>, action: Action) {
+fn write_record_to_log(tm: DateTime<UTC>, action: &Action) {
     let action_token = match action {
         Action::PunchIn => "I",
         Action::PunchOut => "O",
@@ -158,14 +157,15 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
 
     // TODO need to account for duration between now and last punch-in
     if get_last_record_action() == Action::PunchIn {
-        record_offset = 1
+        record_offset = 1;
     }
+
     let mut last_punch_out_timestamp: chrono::DateTime<UTC> = chrono::UTC::now();
 
     loop {
         let read_attempt =
             populate_record_at_offset_from_end(&mut config_file, &mut record, record_offset);
-        if !read_attempt.is_ok() || record.timestamp < start_time {
+        if read_attempt.is_err() || record.timestamp < start_time {
             if total_seconds_in_current_day != 0 {
                 daily_durations.push(DailyDuration {
                     date: current_date,
@@ -206,10 +206,11 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
             format_duration(daily_duration.duration)
         );
     }
+
     println!(
         "\nTotal: {}",
         format_duration(chrono::Duration::seconds(total_seconds_in_time_range))
-    )
+    );
 }
 
 fn print_current_state() {
@@ -227,11 +228,12 @@ fn print_current_state() {
     if record.action == Action::PunchIn {
         let current_timestamp = chrono::UTC::now();
         let time_punched_in = current_timestamp.sub(record.timestamp);
+
         println!(
             "Punched in since {} ({})",
             record.timestamp,
             format_duration(time_punched_in)
-        )
+        );
     } else {
         let mut previous_record = empty_record();
         match populate_record_at_offset_from_end(&mut config_file, &mut previous_record, 1) {
@@ -243,12 +245,13 @@ fn print_current_state() {
         }
 
         let delta = record.timestamp.sub(previous_record.timestamp);
+
         println!(
             "Previously punched in between {} and {} ({})",
             previous_record.timestamp,
             record.timestamp,
             format_duration(delta)
-        )
+        );
     }
 }
 
@@ -279,14 +282,14 @@ fn get_last_record_action() -> Action {
     record.action
 }
 
-fn ensure_last_record_is_of_action(expected_action: Action) {
+fn ensure_last_record_is_of_action(expected_action: &Action) {
     let last_action = get_last_record_action();
 
     if last_action == Action::Unset {
         return;
     }
 
-    if last_action != expected_action {
+    if last_action != *expected_action {
         match expected_action {
             Action::PunchIn => {
                 println!("Already punched out, punch in first!");
@@ -315,23 +318,23 @@ fn populate_record_at_offset_from_end(
     record: &mut Record,
     offset_from_end: u64,
 ) -> Result<(), String> {
-    return seek_to_record_offset(config_file, offset_from_end)
-        .and_then(|_| populate_record_at_current_offset(config_file, record));
+    seek_to_record_offset(config_file, offset_from_end)
+        .and_then(|_| populate_record_at_current_offset(config_file, record))
 }
 
 fn populate_record_at_current_offset(f: &mut File, record: &mut Record) -> Result<(), String> {
-    let mut data = [0 as u8; RECORD_LENGTH];
+    let mut data = [0_u8; RECORD_LENGTH];
     let read = f.read(&mut data);
     if read.unwrap() != RECORD_LENGTH {
-        panic!("Could not read complete record of {} bytes", RECORD_LENGTH)
+        panic!("Could not read complete record of {} bytes", RECORD_LENGTH);
     }
     let (ts_data, rest) = data.split_at(19);
-    let timestamp = str::from_utf8(&ts_data).unwrap();
-    let parse_result = chrono::UTC.datetime_from_str(&timestamp, "%FT%T");
+    let timestamp = str::from_utf8(ts_data).unwrap();
+    let parse_result = chrono::UTC.datetime_from_str(timestamp, "%FT%T");
 
     let record_ts = parse_result.unwrap().with_timezone(&chrono::UTC);
     record.timestamp = record_ts;
-    let action_string = str::from_utf8(&rest).unwrap();
+    let action_string = str::from_utf8(rest).unwrap();
     if action_string == "_O\n" {
         record.action = Action::PunchOut;
     } else if action_string == "_I\n" {
@@ -354,10 +357,9 @@ fn seek_to_record_offset(f: &mut File, record_offset: u64) -> Result<(), String>
     }
 
     let record_length_in_bytes = RECORD_LENGTH as u64;
-    let seek_offset =
-        (file_len as i64 - ((record_offset + 1) * record_length_in_bytes) as i64) as u64;
+    let seek_offset = file_len - ((record_offset + 1) * record_length_in_bytes);
     let seek_result = f.seek(SeekFrom::Start(seek_offset));
-    if !seek_result.is_ok() {
+    if seek_result.is_err() {
         return Err(format!("Failed to seek: {}", seek_result.err().unwrap()));
     }
     if seek_result.unwrap() != seek_offset {
