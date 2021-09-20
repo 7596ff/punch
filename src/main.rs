@@ -2,7 +2,7 @@
 
 mod journal;
 
-use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Timelike, Weekday, UTC};
+use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Timelike, Utc, Weekday};
 use clap::{App, AppSettings, Arg, SubCommand};
 use std::{
     fs::File,
@@ -22,13 +22,13 @@ enum Action {
 
 #[derive(Debug)]
 struct Record {
-    timestamp: DateTime<UTC>,
+    timestamp: DateTime<Utc>,
     action: Action,
 }
 
 #[derive(Debug)]
 struct DailyDuration {
-    date: Date<UTC>,
+    date: Date<Utc>,
     duration: Duration,
 }
 
@@ -71,11 +71,11 @@ fn main() {
         }
         ("in", _) => {
             ensure_last_record_is_of_action(&Action::PunchOut);
-            write_record_to_log(UTC::now(), &Action::PunchIn);
+            write_record_to_log(Utc::now(), &Action::PunchIn);
         }
         ("out", _) => {
             ensure_last_record_is_of_action(&Action::PunchIn);
-            write_record_to_log(UTC::now(), &Action::PunchOut);
+            write_record_to_log(Utc::now(), &Action::PunchOut);
         }
         _ => {
             println!("Unknown command");
@@ -83,7 +83,7 @@ fn main() {
     }
 }
 
-fn write_record_to_log(tm: DateTime<UTC>, action: &Action) {
+fn write_record_to_log(tm: DateTime<Utc>, action: &Action) {
     let action_token = match action {
         Action::PunchIn => "I",
         Action::PunchOut => "O",
@@ -100,7 +100,7 @@ fn write_record_to_log(tm: DateTime<UTC>, action: &Action) {
 }
 
 fn print_month_to_date_summary() {
-    let mut start_of_month = UTC::now()
+    let mut start_of_month = Utc::now()
         .with_second(0)
         .map(|ts| ts.with_minute(0).map(|ts| ts.with_hour(0)))
         .unwrap()
@@ -118,7 +118,7 @@ fn print_month_to_date_summary() {
 }
 
 fn print_weekly_summary() {
-    let mut start_of_week = UTC::now()
+    let mut start_of_week = Utc::now()
         .with_second(0)
         .map(|ts| ts.with_minute(0).map(|ts| ts.with_hour(0)))
         .unwrap()
@@ -135,12 +135,12 @@ fn print_weekly_summary() {
     print_daily_durations_since(start_of_week);
 }
 
-fn print_daily_durations_since(start_time: DateTime<UTC>) {
+fn print_daily_durations_since(start_time: DateTime<Utc>) {
     let mut daily_durations: Vec<DailyDuration> = vec![];
     let mut record_offset = 0;
     let mut record = empty_record();
     let mut config_file = journal::get_conf_file(true, false).unwrap();
-    let mut current_date: Date<UTC> = UTC::now().date().add(Duration::days(1));
+    let mut current_date: Date<Utc> = Utc::now().date().add(Duration::days(1));
 
     let mut day_count: i64 = 0;
     let mut total_seconds_in_current_day: i64 = 0;
@@ -151,7 +151,7 @@ fn print_daily_durations_since(start_time: DateTime<UTC>) {
         record_offset = 1;
     }
 
-    let mut last_punch_out_timestamp: DateTime<UTC> = UTC::now();
+    let mut last_punch_out_timestamp: DateTime<Utc> = Utc::now();
 
     loop {
         let read_attempt =
@@ -217,7 +217,7 @@ fn print_current_state() {
     }
 
     if record.action == Action::PunchIn {
-        let current_timestamp = UTC::now();
+        let current_timestamp = Utc::now();
         let time_punched_in = current_timestamp.sub(record.timestamp);
 
         println!(
@@ -300,7 +300,7 @@ fn ensure_last_record_is_of_action(expected_action: &Action) {
 fn empty_record() -> Record {
     Record {
         action: Action::Unset,
-        timestamp: UTC::now(),
+        timestamp: Utc::now(),
     }
 }
 
@@ -321,9 +321,9 @@ fn populate_record_at_current_offset(f: &mut File, record: &mut Record) -> Resul
     }
     let (ts_data, rest) = data.split_at(19);
     let timestamp = str::from_utf8(ts_data).unwrap();
-    let parse_result = UTC.datetime_from_str(timestamp, "%FT%T");
+    let parse_result = Utc.datetime_from_str(timestamp, "%FT%T");
 
-    let record_ts = parse_result.unwrap().with_timezone(&UTC);
+    let record_ts = parse_result.unwrap().with_timezone(&Utc);
     record.timestamp = record_ts;
     let action_string = str::from_utf8(rest).unwrap();
     if action_string == "_O\n" {
