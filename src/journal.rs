@@ -6,7 +6,7 @@ use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process;
-use std::str;
+
 
 pub fn get_conf_file(read: bool, append: bool) -> io::Result<File> {
     let mut conf_file = PathBuf::new();
@@ -36,7 +36,7 @@ pub fn ensure_log_file_exists() -> io::Result<()> {
     let mut dir_builder = DirBuilder::new();
     dir_builder.recursive(true);
 
-    try!(dir_builder.create(config_path));
+    r#try!(dir_builder.create(config_path));
 
     let conf_file = conf_file_builder.as_path();
     match OpenOptions::new().create(true).write(true).open(conf_file) {
