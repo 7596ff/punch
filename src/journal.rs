@@ -1,11 +1,10 @@
 use directories::BaseDirs;
-use std::fs::DirBuilder;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io;
-use std::io::Write;
-use std::path::PathBuf;
-use std::process;
+use std::{
+    fs::{DirBuilder, File, OpenOptions},
+    io::{self, Write},
+    path::PathBuf,
+    process,
+};
 
 pub fn get_conf_file(read: bool, append: bool) -> io::Result<File> {
     let mut conf_file = PathBuf::new();

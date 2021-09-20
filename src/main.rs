@@ -2,22 +2,14 @@
 
 mod journal;
 
-use std::fs::File;
-use std::io::Read;
-use std::io::Seek;
-use std::io::SeekFrom;
-use std::ops::Add;
-use std::ops::Sub;
-use std::process;
-use std::str;
-
+use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Timelike, Weekday, UTC};
 use clap::{App, AppSettings, Arg, SubCommand};
-
-use chrono::DateTime;
-use chrono::Datelike;
-use chrono::TimeZone;
-use chrono::Timelike;
-use chrono::UTC;
+use std::{
+    fs::File,
+    io::{Read, Seek, SeekFrom},
+    ops::{Add, Sub},
+    process, str,
+};
 
 const RECORD_LENGTH: usize = 22;
 
@@ -36,8 +28,8 @@ struct Record {
 
 #[derive(Debug)]
 struct DailyDuration {
-    date: chrono::date::Date<UTC>,
-    duration: chrono::Duration,
+    date: Date<UTC>,
+    duration: Duration,
 }
 
 fn main() {
@@ -79,11 +71,11 @@ fn main() {
         }
         ("in", _) => {
             ensure_last_record_is_of_action(&Action::PunchOut);
-            write_record_to_log(chrono::UTC::now(), &Action::PunchIn);
+            write_record_to_log(UTC::now(), &Action::PunchIn);
         }
         ("out", _) => {
             ensure_last_record_is_of_action(&Action::PunchIn);
-            write_record_to_log(chrono::UTC::now(), &Action::PunchOut);
+            write_record_to_log(UTC::now(), &Action::PunchOut);
         }
         _ => {
             println!("Unknown command");
@@ -108,7 +100,7 @@ fn write_record_to_log(tm: DateTime<UTC>, action: &Action) {
 }
 
 fn print_month_to_date_summary() {
-    let mut start_of_month = chrono::UTC::now()
+    let mut start_of_month = UTC::now()
         .with_second(0)
         .map(|ts| ts.with_minute(0).map(|ts| ts.with_hour(0)))
         .unwrap()
@@ -119,14 +111,14 @@ fn print_month_to_date_summary() {
         if start_of_month.day() == 1 {
             break;
         }
-        start_of_month = start_of_month.sub(chrono::Duration::days(1));
+        start_of_month = start_of_month.sub(Duration::days(1));
     }
 
     print_daily_durations_since(start_of_month);
 }
 
 fn print_weekly_summary() {
-    let mut start_of_week = chrono::UTC::now()
+    let mut start_of_week = UTC::now()
         .with_second(0)
         .map(|ts| ts.with_minute(0).map(|ts| ts.with_hour(0)))
         .unwrap()
@@ -134,22 +126,21 @@ fn print_weekly_summary() {
         .unwrap();
 
     loop {
-        if start_of_week.weekday() == chrono::Weekday::Mon {
+        if start_of_week.weekday() == Weekday::Mon {
             break;
         }
-        start_of_week = start_of_week.sub(chrono::Duration::days(1));
+        start_of_week = start_of_week.sub(Duration::days(1));
     }
 
     print_daily_durations_since(start_of_week);
 }
 
-fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
+fn print_daily_durations_since(start_time: DateTime<UTC>) {
     let mut daily_durations: Vec<DailyDuration> = vec![];
     let mut record_offset = 0;
     let mut record = empty_record();
     let mut config_file = journal::get_conf_file(true, false).unwrap();
-    let mut current_date: chrono::Date<UTC> =
-        chrono::UTC::now().date().add(chrono::Duration::days(1));
+    let mut current_date: Date<UTC> = UTC::now().date().add(Duration::days(1));
 
     let mut day_count: i64 = 0;
     let mut total_seconds_in_current_day: i64 = 0;
@@ -160,7 +151,7 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
         record_offset = 1;
     }
 
-    let mut last_punch_out_timestamp: chrono::DateTime<UTC> = chrono::UTC::now();
+    let mut last_punch_out_timestamp: DateTime<UTC> = UTC::now();
 
     loop {
         let read_attempt =
@@ -169,7 +160,7 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
             if total_seconds_in_current_day != 0 {
                 daily_durations.push(DailyDuration {
                     date: current_date,
-                    duration: chrono::Duration::seconds(total_seconds_in_current_day),
+                    duration: Duration::seconds(total_seconds_in_current_day),
                 });
             }
             break;
@@ -177,7 +168,7 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
         if record.timestamp.date() != current_date && day_count != 0 {
             daily_durations.push(DailyDuration {
                 date: current_date,
-                duration: chrono::Duration::seconds(total_seconds_in_current_day),
+                duration: Duration::seconds(total_seconds_in_current_day),
             });
 
             total_seconds_in_current_day = 0;
@@ -209,7 +200,7 @@ fn print_daily_durations_since(start_time: chrono::DateTime<UTC>) {
 
     println!(
         "\nTotal: {}",
-        format_duration(chrono::Duration::seconds(total_seconds_in_time_range))
+        format_duration(Duration::seconds(total_seconds_in_time_range))
     );
 }
 
@@ -226,7 +217,7 @@ fn print_current_state() {
     }
 
     if record.action == Action::PunchIn {
-        let current_timestamp = chrono::UTC::now();
+        let current_timestamp = UTC::now();
         let time_punched_in = current_timestamp.sub(record.timestamp);
 
         println!(
@@ -255,7 +246,7 @@ fn print_current_state() {
     }
 }
 
-fn format_duration(duration: chrono::Duration) -> String {
+fn format_duration(duration: Duration) -> String {
     format!(
         "{:02}h{:02}m",
         duration.num_hours(),
@@ -309,7 +300,7 @@ fn ensure_last_record_is_of_action(expected_action: &Action) {
 fn empty_record() -> Record {
     Record {
         action: Action::Unset,
-        timestamp: chrono::UTC::now(),
+        timestamp: UTC::now(),
     }
 }
 
@@ -330,9 +321,9 @@ fn populate_record_at_current_offset(f: &mut File, record: &mut Record) -> Resul
     }
     let (ts_data, rest) = data.split_at(19);
     let timestamp = str::from_utf8(ts_data).unwrap();
-    let parse_result = chrono::UTC.datetime_from_str(timestamp, "%FT%T");
+    let parse_result = UTC.datetime_from_str(timestamp, "%FT%T");
 
-    let record_ts = parse_result.unwrap().with_timezone(&chrono::UTC);
+    let record_ts = parse_result.unwrap().with_timezone(&UTC);
     record.timestamp = record_ts;
     let action_string = str::from_utf8(rest).unwrap();
     if action_string == "_O\n" {
